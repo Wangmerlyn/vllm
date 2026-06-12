@@ -86,6 +86,7 @@ if TYPE_CHECKING:
     VLLM_FLOAT32_MATMUL_PRECISION: Literal["highest", "high", "medium"] = "highest"
     VLLM_BATCH_INVARIANT: bool = False
     VLLM_TRITON_ATTN_USE_TD: bool | None = None
+    VLLM_ATTENTION_SINK_DUMP_PATH: str | None = None
     MAX_JOBS: str | None = None
     NVCC_THREADS: str | None = None
     VLLM_USE_PRECOMPILED: bool = False
@@ -698,6 +699,10 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Dump fx graphs to the given directory.
     # It will override CompilationConfig.debug_dump_path if set.
     "VLLM_DEBUG_DUMP_PATH": lambda: os.environ.get("VLLM_DEBUG_DUMP_PATH", None),
+    # Dump per-token per-head attention sink mass for supported attention backends.
+    "VLLM_ATTENTION_SINK_DUMP_PATH": lambda: os.environ.get(
+        "VLLM_ATTENTION_SINK_DUMP_PATH", None
+    ),
     # Feature flag to enable/disable AOT compilation. This will ensure
     # compilation is done in warmup phase and the compilation will be
     # reused in subsequent calls.
@@ -1955,6 +1960,7 @@ def compile_factors() -> dict[str, object]:
         "VLLM_USE_MODELSCOPE",
         "VLLM_RINGBUFFER_WARNING_INTERVAL",
         "VLLM_DEBUG_DUMP_PATH",
+        "VLLM_ATTENTION_SINK_DUMP_PATH",
         "VLLM_PORT",
         "VLLM_CACHE_ROOT",
         "LD_LIBRARY_PATH",

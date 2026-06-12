@@ -27,6 +27,10 @@ from vllm.v1.attention.backends.fa_utils import (
     is_fa_version_supported,
     is_flash_attn_varlen_func_available,
 )
+from vllm.v1.attention.backends.sink_debug import (
+    attention_sink_dump_enabled,
+    dump_attention_sink_mass,
+)
 from vllm.v1.attention.backends.utils import get_dcp_local_seq_lens
 from vllm.v1.attention.ops.common import cp_lse_ag_out_rs
 from vllm.v1.attention.ops.dcp_alltoall import dcp_a2a_lse_reduce
@@ -836,31 +840,72 @@ class FlashAttentionImpl(AttentionImpl):
                     mm_mask_mod = _make_mm_prefix_mask_mod(max_ranges)
                     mm_aux = [mm_prefix_ranges]
 
-                flash_attn_varlen_func(
-                    q=query[:num_actual_tokens],
-                    k=key_cache,
-                    v=value_cache,
-                    out=output[:num_actual_tokens],
-                    cu_seqlens_q=cu_seqlens_q,
-                    max_seqlen_q=max_seqlen_q,
-                    seqused_k=seqused_k,
-                    max_seqlen_k=max_seqlen_k,
-                    softmax_scale=self.scale,
-                    causal=attn_metadata.causal,
-                    alibi_slopes=self.alibi_slopes,
-                    window_size=sliding_window_size,
-                    block_table=block_table,
-                    softcap=self.logits_soft_cap,
-                    scheduler_metadata=scheduler_metadata,
-                    fa_version=self.vllm_flash_attn_version,
-                    q_descale=q_descale,
-                    k_descale=k_descale,
-                    v_descale=v_descale,
-                    num_splits=attn_metadata.max_num_splits,
-                    s_aux=self.sinks,
-                    mask_mod=mm_mask_mod,
-                    aux_tensors=mm_aux,
+                should_dump_sink_mass = (
+                    self.sinks is not None and attention_sink_dump_enabled()
                 )
+                if should_dump_sink_mass:
+                    _, softmax_lse = flash_attn_varlen_func(
+                        q=query[:num_actual_tokens],
+                        k=key_cache,
+                        v=value_cache,
+                        out=output[:num_actual_tokens],
+                        cu_seqlens_q=cu_seqlens_q,
+                        max_seqlen_q=max_seqlen_q,
+                        seqused_k=seqused_k,
+                        max_seqlen_k=max_seqlen_k,
+                        softmax_scale=self.scale,
+                        causal=attn_metadata.causal,
+                        alibi_slopes=self.alibi_slopes,
+                        window_size=sliding_window_size,
+                        block_table=block_table,
+                        softcap=self.logits_soft_cap,
+                        return_softmax_lse=True,
+                        scheduler_metadata=scheduler_metadata,
+                        fa_version=self.vllm_flash_attn_version,
+                        q_descale=q_descale,
+                        k_descale=k_descale,
+                        v_descale=v_descale,
+                        num_splits=attn_metadata.max_num_splits,
+                        s_aux=self.sinks,
+                        mask_mod=mm_mask_mod,
+                        aux_tensors=mm_aux,
+                    )
+                    dump_attention_sink_mass(
+                        backend="FLASH_ATTN",
+                        layer_name=layer.layer_name,
+                        sinks=self.sinks,
+                        softmax_lse=softmax_lse,
+                        num_actual_tokens=num_actual_tokens,
+                        query_start_loc=cu_seqlens_q,
+                        seq_lens=seqused_k,
+                        sliding_window=self.sliding_window,
+                    )
+                else:
+                    flash_attn_varlen_func(
+                        q=query[:num_actual_tokens],
+                        k=key_cache,
+                        v=value_cache,
+                        out=output[:num_actual_tokens],
+                        cu_seqlens_q=cu_seqlens_q,
+                        max_seqlen_q=max_seqlen_q,
+                        seqused_k=seqused_k,
+                        max_seqlen_k=max_seqlen_k,
+                        softmax_scale=self.scale,
+                        causal=attn_metadata.causal,
+                        alibi_slopes=self.alibi_slopes,
+                        window_size=sliding_window_size,
+                        block_table=block_table,
+                        softcap=self.logits_soft_cap,
+                        scheduler_metadata=scheduler_metadata,
+                        fa_version=self.vllm_flash_attn_version,
+                        q_descale=q_descale,
+                        k_descale=k_descale,
+                        v_descale=v_descale,
+                        num_splits=attn_metadata.max_num_splits,
+                        s_aux=self.sinks,
+                        mask_mod=mm_mask_mod,
+                        aux_tensors=mm_aux,
+                    )
                 return output
 
         # Cascade attention (rare case).
